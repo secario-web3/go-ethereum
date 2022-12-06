@@ -1951,6 +1951,69 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 	return ret, nil
 }
 
+type SimulateCallBundleArgs struct {
+	Calls                  []TransactionArgs     `json:"calls"`
+	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
+	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
+	Coinbase               *string               `json:"coinbase"`
+	Timestamp              *uint64               `json:"timestamp"`
+	Timeout                *int64                `json:"timeout"`
+	GasLimit               *uint64               `json:"gasLimit"`
+	Difficulty             *big.Int              `json:"difficulty"`
+	BaseFee                *big.Int              `json:"baseFee"`
+}
+
+func (s *BundleAPI) SimulateCallBundle(ctx context.Context, args SimulateBundleAndCallsArgs) (map[string]interface{}, error) {
+	if args.BlockNumber == 0 {
+		return nil, errors.New("bundle missing blockNumber")
+	}
+
+	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
+
+	timeoutMilliSeconds := int64(5000)
+	if args.Timeout != nil {
+		timeoutMilliSeconds = *args.Timeout
+	}
+	timeout := time.Millisecond * time.Duration(timeoutMilliSeconds)
+	state, parent, err := s.b.StateAndHeaderByNumberOrHash(ctx, args.StateBlockNumberOrHash)
+	if state == nil || err != nil {
+		return nil, err
+	}
+
+	// Setup context so it may be cancelled the call has completed
+	// or, in case of unmetered gas, setup a context with a timeout.
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	// Make sure the context is cancelled when the call has completed
+	// this makes sure resources are cleaned up.
+	defer cancel()
+
+	results := []map[string]interface{}{}
+
+	for _, call := range args.Calls {
+		result, err := DoCall(ctx, s.b, call, args.StateBlockNumberOrHash, nil, s.b.RPCEVMTimeout(), s.b.RPCGasCap())
+
+		jsonResult := map[string]interface{}{}
+		if err != nil {
+			jsonResult["error"] = err.Error()
+		} else {
+			dst := make([]byte, hex.EncodedLen(len(result.Return())))
+			hex.Encode(dst, result.Return())
+			jsonResult["value"] = "0x" + string(dst)
+		}
+		results = append(results, jsonResult)
+	}
+
+	ret := map[string]interface{}{}
+	ret["results"] = results
+	ret["stateBlockNumber"] = parent.Number.Int64()
+	return ret, nil
+}
+
 // SendRawTransaction will add the signed transaction to the transaction pool.
 // The sender is responsible for signing the transaction and using the correct nonce.
 func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
