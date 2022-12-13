@@ -1770,9 +1770,9 @@ func NewBundleAPI(b Backend, chain *core.BlockChain) *BundleAPI {
 
 // SimulateBundleAndCallArgs represents the arguments for a SimulateBundleAndCall.
 type SimulateBundleAndCallsArgs struct {
-	PreCalls               []TransactionArgs     `json:"calls"`
+	PreCalls               []TransactionArgs     `json:"preCalls"`
 	Txs                    []hexutil.Bytes       `json:"txs"`
-	PostCalls              []TransactionArgs     `json:"calls"`
+	PostCalls              []TransactionArgs     `json:"postCalls"`
 	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
 	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
 	Coinbase               *string               `json:"coinbase"`
