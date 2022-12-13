@@ -1770,8 +1770,9 @@ func NewBundleAPI(b Backend, chain *core.BlockChain) *BundleAPI {
 
 // SimulateBundleAndCallArgs represents the arguments for a SimulateBundleAndCall.
 type SimulateBundleAndCallsArgs struct {
+	PreCalls               []TransactionArgs     `json:"calls"`
 	Txs                    []hexutil.Bytes       `json:"txs"`
-	Calls                  []TransactionArgs     `json:"calls"`
+	PostCalls              []TransactionArgs     `json:"calls"`
 	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
 	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
 	Coinbase               *string               `json:"coinbase"`
@@ -1859,7 +1860,24 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 	// and apply the message.
 	gp := new(core.GasPool).AddGas(math.MaxUint64)
 
+	preResults := []map[string]interface{}{}
+	postResults := []map[string]interface{}{}
 	results := []map[string]interface{}{}
+
+	for _, call := range args.PreCalls {
+		result, err := DoCall(ctx, s.b, call, args.StateBlockNumberOrHash, nil, s.b.RPCEVMTimeout(), s.b.RPCGasCap())
+
+		jsonResult := map[string]interface{}{}
+		if err != nil {
+			jsonResult["error"] = err.Error()
+		} else {
+			dst := make([]byte, hex.EncodedLen(len(result.Return())))
+			hex.Encode(dst, result.Return())
+			jsonResult["value"] = "0x" + string(dst)
+		}
+		preResults = append(results, jsonResult)
+	}
+
 	coinbaseBalanceBefore := state.GetBalance(coinbase)
 
 	bundleHash := sha3.NewLegacyKeccak256()
@@ -1918,7 +1936,7 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 		results = append(results, jsonResult)
 	}
 
-	for _, call := range args.Calls {
+	for _, call := range args.PostCalls {
 		result, err := DoCall(ctx, s.b, call, args.StateBlockNumberOrHash, nil, s.b.RPCEVMTimeout(), s.b.RPCGasCap())
 
 		jsonResult := map[string]interface{}{}
@@ -1929,10 +1947,12 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 			hex.Encode(dst, result.Return())
 			jsonResult["value"] = "0x" + string(dst)
 		}
-		results = append(results, jsonResult)
+		postResults = append(results, jsonResult)
 	}
 
 	ret := map[string]interface{}{}
+	ret["preResults"] = preResults
+	ret["postResults"] = postResults
 	ret["results"] = results
 	coinbaseDiff := new(big.Int).Sub(state.GetBalance(coinbase), coinbaseBalanceBefore)
 	ret["coinbaseDiff"] = coinbaseDiff.String()
@@ -1948,69 +1968,6 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 
 	ret["bundleHash"] = "0x" + common.Bytes2Hex(bundleHash.Sum(nil))
 
-	return ret, nil
-}
-
-type SimulateCallBundleArgs struct {
-	Calls                  []TransactionArgs     `json:"calls"`
-	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
-	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
-	Coinbase               *string               `json:"coinbase"`
-	Timestamp              *uint64               `json:"timestamp"`
-	Timeout                *int64                `json:"timeout"`
-	GasLimit               *uint64               `json:"gasLimit"`
-	Difficulty             *big.Int              `json:"difficulty"`
-	BaseFee                *big.Int              `json:"baseFee"`
-}
-
-func (s *BundleAPI) SimulateCallBundle(ctx context.Context, args SimulateBundleAndCallsArgs) (map[string]interface{}, error) {
-	if args.BlockNumber == 0 {
-		return nil, errors.New("bundle missing blockNumber")
-	}
-
-	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
-
-	timeoutMilliSeconds := int64(5000)
-	if args.Timeout != nil {
-		timeoutMilliSeconds = *args.Timeout
-	}
-	timeout := time.Millisecond * time.Duration(timeoutMilliSeconds)
-	state, parent, err := s.b.StateAndHeaderByNumberOrHash(ctx, args.StateBlockNumberOrHash)
-	if state == nil || err != nil {
-		return nil, err
-	}
-
-	// Setup context so it may be cancelled the call has completed
-	// or, in case of unmetered gas, setup a context with a timeout.
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
-	}
-	// Make sure the context is cancelled when the call has completed
-	// this makes sure resources are cleaned up.
-	defer cancel()
-
-	results := []map[string]interface{}{}
-
-	for _, call := range args.Calls {
-		result, err := DoCall(ctx, s.b, call, args.StateBlockNumberOrHash, nil, s.b.RPCEVMTimeout(), s.b.RPCGasCap())
-
-		jsonResult := map[string]interface{}{}
-		if err != nil {
-			jsonResult["error"] = err.Error()
-		} else {
-			dst := make([]byte, hex.EncodedLen(len(result.Return())))
-			hex.Encode(dst, result.Return())
-			jsonResult["value"] = "0x" + string(dst)
-		}
-		results = append(results, jsonResult)
-	}
-
-	ret := map[string]interface{}{}
-	ret["results"] = results
-	ret["stateBlockNumber"] = parent.Number.Int64()
 	return ret, nil
 }
 
