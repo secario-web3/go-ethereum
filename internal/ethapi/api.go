@@ -1890,7 +1890,7 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 
 		receipt, err := core.ApplyTransaction(s.b.ChainConfig(), s.chain, &coinbase, gp, state, header, tx, &header.GasUsed, vmconfig)
 		if err != nil {
-			return nil, fmt.Errorf("err: %w; txhash %s", err, tx.Hash())
+			return nil, fmt.Errorf("err1: %w; txhash %s", err, tx.Hash())
 		}
 
 		txHash := tx.Hash().String()
@@ -1911,7 +1911,7 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 		totalGasUsed += receipt.GasUsed
 		gasPrice, err := tx.EffectiveGasTip(header.BaseFee)
 		if err != nil {
-			return nil, fmt.Errorf("err: %w; txhash %s", err, tx.Hash())
+			return nil, fmt.Errorf("err3: %w; txhash %s", err, tx.Hash())
 		}
 		gasFeesTx := new(big.Int).Mul(big.NewInt(int64(receipt.GasUsed)), gasPrice)
 		gasFees.Add(gasFees, gasFeesTx)
