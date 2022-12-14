@@ -1896,7 +1896,7 @@ func (s *BundleAPI) SimulateBundleAndCalls(ctx context.Context, args SimulateBun
 		txHash := tx.Hash().String()
 		from, err := types.Sender(signer, tx)
 		if err != nil {
-			return nil, fmt.Errorf("err: %w; txhash %s", err, tx.Hash())
+			return nil, fmt.Errorf("err2: %w; txhash %s", err, tx.Hash())
 		}
 		to := "0x"
 		if tx.To() != nil {
